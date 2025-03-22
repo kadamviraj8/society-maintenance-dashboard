@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import os
 
 # Set page configuration
 st.set_page_config(page_title="Society Maintenance Dashboard", layout="wide")
@@ -78,11 +79,17 @@ body {
 
 # Function to load data
 @st.cache_data
-def load_data(uploaded_file):
-    march_25_df = pd.read_excel(uploaded_file, sheet_name='March 25')
-    other_revenue_df = pd.read_excel(uploaded_file, sheet_name='OTHER REVENUE')
-    expenses_df = pd.read_excel(uploaded_file, sheet_name='Expenses')
-    missing_df = pd.read_excel(uploaded_file, sheet_name='Missing')
+def load_data():
+    # Define the path to the Excel file in the same directory
+    excel_file_path = "society_data.xlsx"  # Replace with your Excel file name
+    if not os.path.exists(excel_file_path):
+        st.error(f"Excel file '{excel_file_path}' not found in the directory. Please ensure the file exists.")
+        st.stop()
+
+    march_25_df = pd.read_excel(excel_file_path, sheet_name='March 25')
+    other_revenue_df = pd.read_excel(excel_file_path, sheet_name='OTHER REVENUE')
+    expenses_df = pd.read_excel(excel_file_path, sheet_name='Expenses')
+    missing_df = pd.read_excel(excel_file_path, sheet_name='Missing')
     return march_25_df, other_revenue_df, expenses_df, missing_df
 
 # Function to calculate metrics
@@ -109,66 +116,57 @@ def main():
     st.markdown("<div class='society-name'>Sanskruti Meander A wing</div>", unsafe_allow_html=True)
     st.markdown("<div class='chairman-line'>Chairman - Shri. Deepak Kale</div>", unsafe_allow_html=True)
 
-    # Initialize session state for file upload
-    if 'file_uploaded' not in st.session_state:
-        st.session_state.file_uploaded = False
+    # Load data automatically
+    try:
+        march_25_df, other_revenue_df, expenses_df, missing_df = load_data()
+    except Exception as e:
+        st.error(f"An error occurred while loading the Excel file: {e}")
+        st.stop()
 
-    # Admin upload section
-    if not st.session_state.file_uploaded:
-        st.markdown("Welcome to the Society Maintenance Dashboard. Please upload the Excel file to proceed.", unsafe_allow_html=True)
-        uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx"], key="file_uploader")
+    # Calculate metrics
+    metrics = calculate_metrics(march_25_df, other_revenue_df, expenses_df)
 
-        if uploaded_file is not None:
-            st.session_state.file_uploaded = True
-            st.session_state.march_25_df, st.session_state.other_revenue_df, st.session_state.expenses_df, st.session_state.missing_df = load_data(uploaded_file)
-            st.success("File uploaded successfully!")
+    # Display Financial Metrics in one line
+    st.markdown("""
+    <div class='metrics-container'>
+        <div class='metric-item'>Total Expected Maintenance: ₹{0:,.2f}</div>
+        <div class='metric-item'>Total Collected Maintenance: ₹{1:,.2f}</div>
+        <div class='metric-item'>Remaining Maintenance: ₹{2:,.2f}</div>
+        <div class='metric-item'>OTHER REVENUE: ₹{3:,.2f}</div>
+        <div class='metric-item'>Expenses: ₹{4:,.2f}</div>
+        <div class='metric-item'>Balance In Society Fund: ₹{5:,.2f}</div>
+    </div>
+    """.format(
+        metrics['Total Expected Maintenance'],
+        metrics['Total Collected Maintenance'],
+        metrics['Remaining Maintenance'],
+        metrics['OTHER REVENUE'],
+        metrics['Expenses'],
+        metrics['Balance In Society fund']
+    ), unsafe_allow_html=True)
 
-    # Display data if file is uploaded
-    if st.session_state.file_uploaded:
-        # Calculate metrics
-        metrics = calculate_metrics(st.session_state.march_25_df, st.session_state.other_revenue_df, st.session_state.expenses_df)
+    # Display OTHER REVENUE sheet with month filter
+    st.subheader("OTHER REVENUE")
+    other_revenue_df['DATE'] = pd.to_datetime(other_revenue_df['DATE'])
+    other_revenue_df['DATE'] = other_revenue_df['DATE'].dt.strftime('%d-%b-%y')  # Format date as 1-Mar-25
+    month_filter = st.selectbox("Select Month", pd.to_datetime(other_revenue_df['DATE']).dt.strftime('%B %Y').unique(), key="other_revenue_month_filter")
+    filtered_other_revenue = other_revenue_df[pd.to_datetime(other_revenue_df['DATE']).dt.strftime('%B %Y') == month_filter]
+    st.dataframe(filtered_other_revenue)
 
-        # Display Financial Metrics in one line
-        st.markdown("""
-        <div class='metrics-container'>
-            <div class='metric-item'>Total Expected Maintenance: ₹{0:,.2f}</div>
-            <div class='metric-item'>Total Collected Maintenance: ₹{1:,.2f}</div>
-            <div class='metric-item'>Remaining Maintenance: ₹{2:,.2f}</div>
-            <div class='metric-item'>OTHER REVENUE: ₹{3:,.2f}</div>
-            <div class='metric-item'>Expenses: ₹{4:,.2f}</div>
-            <div class='metric-item'>Balance In Society Fund: ₹{5:,.2f}</div>
-        </div>
-        """.format(
-            metrics['Total Expected Maintenance'],
-            metrics['Total Collected Maintenance'],
-            metrics['Remaining Maintenance'],
-            metrics['OTHER REVENUE'],
-            metrics['Expenses'],
-            metrics['Balance In Society fund']
-        ), unsafe_allow_html=True)
+    # Display Expenses sheet with month filter and bill download links
+    st.subheader("Expenses")
+    expenses_df['Date'] = pd.to_datetime(expenses_df['Date'])
+    expenses_df['Date'] = expenses_df['Date'].dt.strftime('%d-%b-%y')  # Format date as 1-Mar-25
+    month_filter_expenses = st.selectbox("Select Month", pd.to_datetime(expenses_df['Date']).dt.strftime('%B %Y').unique(), key="expenses_month_filter")
+    filtered_expenses = expenses_df[pd.to_datetime(expenses_df['Date']).dt.strftime('%B %Y') == month_filter_expenses]
 
-        # Display OTHER REVENUE sheet with month filter
-        st.subheader("OTHER REVENUE")
-        st.session_state.other_revenue_df['DATE'] = pd.to_datetime(st.session_state.other_revenue_df['DATE'])
-        st.session_state.other_revenue_df['DATE'] = st.session_state.other_revenue_df['DATE'].dt.strftime('%d-%b-%y')  # Format date as 1-Mar-25
-        month_filter = st.selectbox("Select Month", pd.to_datetime(st.session_state.other_revenue_df['DATE']).dt.strftime('%B %Y').unique())
-        filtered_other_revenue = st.session_state.other_revenue_df[pd.to_datetime(st.session_state.other_revenue_df['DATE']).dt.strftime('%B %Y') == month_filter]
-        st.dataframe(filtered_other_revenue)
+    # Make "Link for Bill" clickable
+    filtered_expenses['Link for Bill'] = filtered_expenses['Link for Bill'].apply(lambda x: f'<a href="{x}" target="_blank">Download Bill</a>' if pd.notna(x) else '')
+    st.write(filtered_expenses.to_html(escape=False, index=False), unsafe_allow_html=True)
 
-        # Display Expenses sheet with month filter and bill download links
-        st.subheader("Expenses")
-        st.session_state.expenses_df['Date'] = pd.to_datetime(st.session_state.expenses_df['Date'])
-        st.session_state.expenses_df['Date'] = st.session_state.expenses_df['Date'].dt.strftime('%d-%b-%y')  # Format date as 1-Mar-25
-        month_filter_expenses = st.selectbox("Select Month", pd.to_datetime(st.session_state.expenses_df['Date']).dt.strftime('%B %Y').unique())
-        filtered_expenses = st.session_state.expenses_df[pd.to_datetime(st.session_state.expenses_df['Date']).dt.strftime('%B %Y') == month_filter_expenses]
-
-        # Make "Link for Bill" clickable
-        filtered_expenses['Link for Bill'] = filtered_expenses['Link for Bill'].apply(lambda x: f'<a href="{x}" target="_blank">Download Bill</a>' if pd.notna(x) else '')
-        st.write(filtered_expenses.to_html(escape=False, index=False), unsafe_allow_html=True)
-
-        # Display Missing sheet
-        st.subheader("Missing Maintenance")
-        st.dataframe(st.session_state.missing_df)
+    # Display Missing sheet
+    st.subheader("Missing Maintenance")
+    st.dataframe(missing_df)
 
 if __name__ == "__main__":
     main()
